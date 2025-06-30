@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ms-network
+
+  config-server:
+    image: sandesh921/configserver:V1.0
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_RABBITMQ_USERNAME=guest
+      - SPRING_RABBITMQ_PASSWORD=guest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ms-network
+
+  service-a:
+    image: sandesh921/service-a:V1.0
+    container_name: service-a
+    depends_on:
+      config-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - SPRING_APPLICATION_NAME=serviceA
+      - SPRING_PROFILES_ACTIVE=prod
+      - common=this is for testing
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888/
+      - SPRING_CLOUD_CONFIG_URI=http://config-server:8888
+      - SPRING_CLOUD_CONFIG_FAIL_FAST=true
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - logging.level.org.springframework.cloud.config.client=DEBUG
+    ports:
+      - "8080:8080"
+    networks:
+      - ms-network
+
+
+  service-b:
+    image: sandesh921/service-b:V1.0
+    container_name: service-b
+    depends_on:
+      config-server:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - SPRING_APPLICATION_NAME=serviceB
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_CONFIG_IMPORT=configserver:http://config-server:8888/
+      - SPRING_CLOUD_CONFIG_URI=http://config-server:8888
+      - SPRING_CLOUD_CONFIG_FAIL_FAST=true
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - logging.level.org.springframework.cloud.config.client=DEBUG
+    ports:
+      - "8081:8081"
+    networks:
+      - ms-network
+
+networks:
+  ms-network:
+    driver: bridge
